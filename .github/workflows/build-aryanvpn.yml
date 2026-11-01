@@ -1,0 +1,76 @@
+name: Build AryanVPN APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master, main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools" "ndk;27.0.12077973"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
+      - name: Build hev tunnel libs (optional)
+        run: |
+          if [ -f compile-hevtun.sh ]; then
+            bash compile-hevtun.sh || true
+            mkdir -p V2rayNG/app/libs
+            cp -r libs/* V2rayNG/app/libs/ 2>/dev/null || true
+          fi
+
+      - name: Download libv2ray.aar
+        run: |
+          mkdir -p V2rayNG/app/libs
+          TAG=$(git -C AndroidLibXrayLite describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$TAG" ]; then
+            curl -fsSL -o V2rayNG/app/libs/libv2ray.aar \
+              "https://github.com/2dust/AndroidLibXrayLite/releases/download/${TAG}/libv2ray.aar" || true
+          fi
+          if [ ! -s V2rayNG/app/libs/libv2ray.aar ]; then
+            curl -fsSL -o /tmp/rel.json https://api.github.com/repos/2dust/AndroidLibXrayLite/releases/latest
+            URL=$(python3 -c "import json;print([a['browser_download_url'] for a in json.load(open('/tmp/rel.json')).get('assets',[]) if a['name'].endswith('.aar')][0])")
+            curl -fsSL -o V2rayNG/app/libs/libv2ray.aar "$URL"
+          fi
+          ls -lh V2rayNG/app/libs/
+
+      - name: Build debug APK
+        working-directory: V2rayNG
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+          ./gradlew --no-daemon assemblePlaystoreDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AryanVPN-apk
+          path: V2rayNG/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
