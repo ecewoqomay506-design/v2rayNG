@@ -29,6 +29,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
+          packages: ''
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: false
 
@@ -37,9 +38,7 @@ jobs:
         run: |
           set -e
 
-          set +o pipefail
           yes | sdkmanager --licenses
-          set -o pipefail
 
           sdkmanager --install \
             "platforms;android-35" \
@@ -58,8 +57,11 @@ jobs:
       - name: Build HEV tunnel libraries (optional)
         shell: bash
         run: |
+          set -e
+
           if [ -f compile-hevtun.sh ]; then
             bash compile-hevtun.sh
+
             if [ -d libs ]; then
               mkdir -p V2rayNG/app/libs
               cp -r libs/* V2rayNG/app/libs/ 2>/dev/null || true
@@ -122,11 +124,11 @@ jobs:
             exit 1
           }
 
-          test -f V2rayNG/settings.gradle || \
-          test -f V2rayNG/settings.gradle.kts || {
+          if [ ! -f V2rayNG/settings.gradle ] && \
+             [ ! -f V2rayNG/settings.gradle.kts ]; then
             echo "ERROR: Gradle settings file not found in V2rayNG."
             exit 1
-          }
+          fi
 
       - name: Build debug APK
         working-directory: V2rayNG
